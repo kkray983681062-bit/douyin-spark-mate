@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spark-mate"
+version = "0.1.5"
+description = "克克咪 火花搭子：本地抖音好友消息助手"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["PySide6-Essentials==6.11.2", "playwright==1.63.0"]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "pyinstaller==6.22.3", "ruff==0.16.8"]
+
+[project.scripts]
+spark-mate = "spark_mate.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+spark_mate = ["*.js", "assets/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"

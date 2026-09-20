@@ -1,0 +1,29 @@
+<!doctype html><meta charset="utf-8"><title>离线抖音页面结构测试</title>
+<style>body{font-family:sans-serif} .contacts{height:250px;overflow:auto} [data-e2e=conversation-item]{padding:10px;cursor:pointer} [contenteditable]{border:1px solid #aaa;min-height:40px}.emojiEmojiItememojiItem{display:inline-block;padding:10px;cursor:pointer}.componentsemojiemojiPanel{display:none}</style>
+<div class="contacts"><div data-e2e="conversation-item" id="one"><div class="ConversationItemtitle">小雨</div></div><div data-e2e="conversation-item" id="two"><div class="ConversationItemtitle">小雨</div></div></div>
+<div class="RightPanelHeaderconvHeader"><span id="name">小雨</span></div>
+<section id="messages"></section><div class="messageEditorinputArea" contenteditable="true"></div>
+<button id="send">发送</button><button id="emoji" aria-label="表情">表情</button><input type="file" accept="image/*">
+<div class="componentsemojiemojiPanel"><div class="emojiEmojiItememojiItem"><span class="emojiEmojiItememojiItemDesc">比心</span><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=="></div></div>
+<script>
+window.mode='success';window.sent=[];window.sequence=100;
+const conversations={c1:{id:'c1',type:1,lastMessageIndexV2:'100'},c2:{id:'c2',type:1,lastMessageIndexV2:'100'}};
+const bind=(node,props)=>{node.__reactFiber$fixture={memoizedProps:props,return:null}};
+const header=document.querySelector('.RightPanelHeaderconvHeader');
+window.active='c1';
+window.openChat=id=>{active=id;bind(header,{curConversation:conversations[id]});document.querySelector('#messages').innerHTML=''};
+['one','two'].forEach((id,i)=>{let el=document.getElementById(id);bind(el,{conversation:conversations['c'+(i+1)]});el.onclick=()=>openChat('c'+(i+1))});openChat('c1');
+window.deliver=(value,kind='text',resource='')=>{
+sent.push({value,kind,target:active});document.querySelector('[contenteditable]').innerText='';
+if(mode==='empty')return;
+const el=document.createElement('div');el.className=kind==='text'?'MessageItemTextcontainer':kind==='sticker'?'MessageItemEmojiemojiBox':'MessageItemImagecontainer';el.textContent=value;
+const msg={clientId:'client-'+(++sequence),serverId:'0',conversationId:active,indexInConversationV2:String(sequence),isFromMe:true,visible:true,type:kind==='text'?7:kind==='sticker'?5:2,flightStatus:1,parsedContent:kind==='text'?{text:value}:kind==='sticker'?{display_name:value,url:{uri:resource}}:{width:1,height:1}};
+bind(el,{message:msg});document.querySelector('#messages').append(el);
+if(mode==='success')setTimeout(()=>{msg.flightStatus=3;msg.serverId='987'+sequence;conversations[active].lastMessageIndexV2=msg.indexInConversationV2},150);
+if(mode==='failed')setTimeout(()=>{msg.flightStatus=-1},150);
+};
+document.querySelector('#send').onclick=()=>deliver(document.querySelector('[contenteditable]').innerText);
+document.querySelector('#emoji').onclick=()=>document.querySelector('.componentsemojiemojiPanel').style.display='block';
+const sticker=document.querySelector('.emojiEmojiItememojiItem');bind(sticker,{sticker:{display_name:'比心',resource_type:4,static_url:'https://example.invalid/heart.png'}});sticker.onclick=()=>deliver('比心','sticker','https://example.invalid/heart.png');
+document.querySelector('input').onchange=()=>deliver('photo','image');
+</script>

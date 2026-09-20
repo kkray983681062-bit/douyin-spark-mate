@@ -1,0 +1,35 @@
+<!doctype html><title>IM transport fixture</title><p>No chat list or composer is mounted.</p>
+<script>
+window.calls=[]; window.mode='ok'; window.uid='100'; window.initResult=3;
+const conversations=[{id:'0:1:100:201',shortId:'9901',type:1},{id:'0:1:100:202',shortId:'9902',type:1},
+  {id:'0:2:100:203',shortId:'9903',type:2}];
+const sdk={
+ get ctx(){return {option:{userId:window.uid},initResult:window.initResult}},
+ getConversationList:()=>conversations,
+ getConversation:({conversationId})=>conversations.find(c=>c.id===conversationId),
+ createMessage:async args=>{
+   calls.push({action:'create',insert:args.insert});
+   return {conversationId:args.conversation.id,conversationShortId:args.conversation.shortId,
+     conversationType:args.conversation.type,clientId:args.clientId, sender:uid,content:args.content,
+     type:args.type,serverId:'',flightStatus:0};
+ },
+ sendMessage:async({message})=>{
+   calls.push({action:'send',clientId:message.clientId,target:message.conversationId,content:message.content});
+   if(mode==='pending')return new Promise(()=>{});
+   if(mode==='network')throw Error('connection lost');
+   message.serverId=mode==='no_server'?'':'987654321'; message.flightStatus=3;
+   if(mode==='wrong_target')message.conversationId='0:1:100:202';
+   if(mode==='wrong_sender')message.sender='200';
+   if(mode==='wrong_content')message.content='{}';
+   if(mode==='wrong_client')message.clientId='somebody-else';
+   return {success:mode!=='rejected',statusCode:mode==='rejected'?7:0,payload:message,
+     body:mode==='no_body'?undefined:{status:mode==='rejected'?7:0,server_message_id:message.serverId,
+       client_message_id:mode==='wrong_echo'?'other-client':message.clientId}};
+ }
+};
+const getterModule=function(e,t,n){const holder={ImSdkInstance:null};holder.ImSdkInstance=sdk;
+  function getImSdkInstance(){return holder.ImSdkInstance}t.o=getImSdkInstance;};
+const modules={5245:{o:()=>sdk}};
+const chunks=window['@pc-im/im:fixture']=[[[1],{5245:getterModule}]];
+chunks.push=function(item){Array.prototype.push.call(this,item);item[2]?.(id=>modules[id]);};
+</script>
