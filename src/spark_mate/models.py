@@ -65,6 +65,7 @@ class Friend:
     identity: str = ''
     selected: bool = False
     override: Message | None = None
+    conversation_type: int = 1
 
 
 class Cancelled(Exception):

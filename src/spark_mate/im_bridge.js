@@ -1,7 +1,7 @@
 async (args) => {
     // Adapt the already authenticated official IM runtime. No captured tokens,
     // message templates, or site implementation are copied into the application.
-    const slot = Symbol.for('spark-mate.im-bridge.v1');
+    const slot = Symbol.for('spark-mate.im-bridge.v2');
     const state = window[slot] || (window[slot] = {jobs: new Map()});
     const fail = code => { throw new Error(code); };
     const positive = value => /^[1-9]\d*$/.test(String(value ?? ''));
@@ -38,15 +38,23 @@ async (args) => {
     }
     function conversation(sdk) {
         account(sdk);
-        if (!/^0:1:\d+:\d+$/.test(args.target || '') || !args.target.split(':').slice(2).includes(args.user_id))
+        if (![1, 2].includes(args.conversation_type) || typeof args.target !== 'string' || !args.target)
             fail('target_mismatch');
+        if (args.conversation_type === 1 && (!/^0:1:\d+:\d+$/.test(args.target) ||
+            !args.target.split(':').slice(2).includes(args.user_id))) fail('target_mismatch');
         const value = sdk.getConversation({conversationId: args.target});
-        if (!value || value.id !== args.target || value.type !== 1 || !positive(value.shortId)) fail('target_mismatch');
+        if (!value || value.id !== args.target || value.type !== args.conversation_type || !positive(value.shortId))
+            fail('target_mismatch');
+        // Groups do not encode their members in the ID. Require the exact group
+        // to exist in this authenticated account's current conversation list.
+        if (value.type === 2 && !sdk.getConversationList().some(c => c.id === value.id &&
+            c.type === 2 && String(c.shortId) === String(value.shortId))) fail('target_mismatch');
         return value;
     }
     function messageMatches(job) {
         const m = job.message;
-        return m && m.clientId === job.clientId && m.conversationId === job.target && m.conversationType === 1 &&
+        return m && m.clientId === job.clientId && m.conversationId === job.target &&
+            m.conversationType === job.conversationType &&
             String(m.conversationShortId) === job.shortId && String(m.sender) === job.userId &&
             m.type === 7 && m.content === job.content;
     }
@@ -55,7 +63,8 @@ async (args) => {
         if (args.op === 'status') {
             if (!sdk) return {ready: false};
             return {ready: true, user_id: String(sdk.ctx.option.userId),
-                single_count: sdk.getConversationList().filter(c => c.type === 1).length};
+                single_count: sdk.getConversationList().filter(c => c.type === 1).length,
+                group_count: sdk.getConversationList().filter(c => c.type === 2).length};
         }
         if (args.op === 'target') { conversation(sdk); return {ok: true}; }
         if (args.op === 'prepare') {
@@ -73,17 +82,20 @@ async (args) => {
                 ]);
             } finally { clearTimeout(timer); }
             const job = {sdk, message, clientId: args.client_id, userId: args.user_id, target: args.target,
-                shortId: String(conv.shortId), content, result: {state: 'prepared'}};
+                shortId: String(conv.shortId), conversationType: conv.type, content, result: {state: 'prepared'}};
             if (!messageMatches(job) || message.serverId) fail('message_mismatch');
             state.jobs.set(args.client_id, job);
             return {state: 'prepared'};
         }
         const job = state.jobs.get(args.client_id);
-        if (!job || job.target !== args.target || job.userId !== args.user_id) fail('missing_operation');
+        if (!job || job.target !== args.target || job.userId !== args.user_id ||
+            job.conversationType !== args.conversation_type) fail('missing_operation');
+        account(sdk);
+        if (job.sdk !== sdk) fail('account_changed');
         if (args.op === 'poll') return job.result;
         if (args.op === 'start') {
-            conversation(sdk);
-            if (job.sdk !== sdk || !messageMatches(job)) fail('message_mismatch');
+            const conv = conversation(sdk);
+            if (String(conv.shortId) !== job.shortId || !messageMatches(job)) fail('message_mismatch');
             if (job.result.state !== 'prepared') return job.result;
             job.result = {state: 'pending'};
             Promise.resolve().then(() => {

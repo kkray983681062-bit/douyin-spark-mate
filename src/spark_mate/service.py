@@ -25,7 +25,7 @@ def build_plan(friends: list[Friend], default: Message) -> list[tuple[Friend, Me
             plan.append((friend, message))
             seen.add(friend.key)
     if not plan:
-        raise ValueError('请先勾选要续火花的好友')
+        raise ValueError('请先勾选要续火花的好友或群聊')
     return plan
 
 
@@ -62,7 +62,7 @@ def run_batch(store: Store, account: str, plan: list[tuple[Friend, Message]], tr
             triggered = True
         try:
             verify()
-            progress({**row, 'status': 'working', 'detail': '正在核对好友并发送'})
+            progress({**row, 'status': 'working', 'detail': '正在核对会话并发送'})
             transport.open_target(friend)
             transport.send(friend, message, trigger)
             if not triggered:

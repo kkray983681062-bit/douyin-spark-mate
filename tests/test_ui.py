@@ -21,6 +21,97 @@ def window(tmp_path, app):
     return MainWindow(tmp_path, demo=True)
 
 
+@pytest.mark.parametrize('draft', ['只属于 A 的未保存草稿', ''])
+def test_account_switch_waits_for_verified_result_and_restores_separate_drafts(tmp_path, app, draft):
+    from spark_mate.accounts import Accounts
+    ui = window(tmp_path, app)
+    try:
+        accounts = Accounts(ui.store)
+        state = lambda uid: {'cookies': [{'name': 'sessionid', 'value': f'offline-{uid}',
+                                          'domain': '.douyin.com'}], 'origins': []}
+        a = accounts.remember('100', state('100'), label='大号')
+        b = accounts.remember('200', state('200'), label='小号')
+        ui.account = a
+        ui.refresh()
+        ui.text_edit.setPlainText(draft)
+        actions = []
+        ui.start = lambda action, payload=None: actions.append((action, payload))
+        assert hasattr(ui, 'switch_account'), 'Account selector has not been implemented'
+        ui.switch_account(b)
+        assert actions == [('switch', b)]
+        assert ui.account == a
+        ui.on_result('switch', b)
+        assert ui.text_edit.toPlainText() != '只属于 A 的未保存草稿'
+        ui.text_edit.setPlainText('只属于 B')
+        ui.switch_account(a)
+        ui.on_result('switch', a)
+        assert ui.text_edit.toPlainText() == draft
+        ui.switch_account(b)
+        ui.on_result('switch', b)
+        assert ui.text_edit.toPlainText() == '只属于 B'
+    finally:
+        ui.close()
+
+
+def test_account_controls_are_disabled_during_send_or_switch(tmp_path, app):
+    ui = window(tmp_path, app)
+    try:
+        assert hasattr(ui, 'account_select'), 'Account controls have not been implemented'
+        ui.worker = object()
+        ui.set_busy(True)
+        assert not ui.account_select.isEnabled()
+        assert not ui.add_account_btn.isEnabled()
+        assert not ui.manage_accounts_btn.isEnabled()
+        actions = []
+        ui.start = lambda *args: actions.append(args)
+        ui.switch_account('another-account')
+        assert not actions
+    finally:
+        ui.worker = None
+        ui.close()
+
+
+def test_identical_account_notes_show_distinct_identity_suffixes(tmp_path, app):
+    ui = window(tmp_path, app)
+    try:
+        for uid in ('100001', '200002'):
+            ui.accounts.remember(uid, {'cookies': [{'name': 'sessionid', 'value': f'fixture-{uid}',
+                'domain': '.douyin.com'}], 'origins': []}, label='我的账号')
+        ui.refresh_accounts()
+        entries = [ui.account_select.itemText(i) for i in range(1, ui.account_select.count())]
+        assert len(set(entries)) == 2
+        assert any('100001' in item for item in entries)
+        assert any('200002' in item for item in entries)
+    finally:
+        ui.close()
+
+
+def test_group_is_labeled_selectable_and_keeps_its_type_in_send_plan(tmp_path, app):
+    from spark_mate.models import Friend, Message
+    from spark_mate.service import build_plan
+    ui = window(tmp_path, app)
+    try:
+        item = Friend('offline-group', '测试群', streak='1000', conversation_type=2)
+        ui.on_result('sync', [item])
+        ui.show()
+        app.processEvents()
+        assert ui.friends[0].key == item.key
+        assert not ui.friends[0].selected
+        cell = ui.table.cellWidget(0, 1)
+        labels = cell.findChildren(QLabel)
+        assert any('群聊' in label.text() and '1000' in label.text() for label in labels)
+        assert '1 个群聊' in ui.status_label.text()
+        name = next(label for label in labels if label.text() == '测试群')
+        point = name.mapToGlobal(name.rect().center())
+        target = app.widgetAt(point)
+        QTest.mouseClick(target, Qt.MouseButton.LeftButton, pos=target.mapFromGlobal(point))
+        app.processEvents()
+        plan = build_plan(ui.store.friends(ui.account), Message('text', '群问候'))
+        assert len(plan) == 1 and plan[0][0].conversation_type == 2
+    finally:
+        ui.close()
+
+
 def test_filter_does_not_discard_hidden_selection(tmp_path, app):
     ui = window(tmp_path, app)
     ui.table.item(0, 0).setCheckState(Qt.CheckState.Checked)
@@ -173,11 +264,18 @@ def test_repeated_sync_reuses_browser_and_application_close_releases_it(
         tmp_path, app, monkeypatch, chat_server, stop_first):
     from spark_mate import browser as browser_module
     from spark_mate.browser import account_key
+    from spark_mate.direct import InterfaceTransport
     from spark_mate.secrets import Vault
     from spark_mate.storage import Store
     from spark_mate.ui import MainWindow
+    from spark_mate.worker import Worker
 
     monkeypatch.setattr(browser_module, 'HOME', chat_server.url)
+    # This fixture tests window lifetime, not the account protocol. Dedicated
+    # account-switching tests exercise server/SDK verification with local identities.
+    monkeypatch.setattr(Worker, 'verify_session',
+                        lambda self, store, account, context, chat: ('100', account_key(context.cookies())))
+    monkeypatch.setattr(InterfaceTransport, 'verify', lambda self: self.chat.check_access())
     cookies = [{'name': 'sessionid', 'value': 'offline-fixture-only', 'domain': '.douyin.com', 'path': '/'}]
     Vault(tmp_path/'login.dpapi').save({'cookies': cookies, 'origins': []})
     with Store(tmp_path) as store:

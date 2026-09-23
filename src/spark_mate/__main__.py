@@ -7,7 +7,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QLockFile, QTimer
+from PySide6.QtCore import QEvent, QLockFile, QTimer
 from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -22,7 +22,7 @@ def self_test(output: Path, app: QApplication) -> int:
     from . import browser as browser_module
     from .browser import DouyinSession
     from .direct import SCRIPT as IM_SCRIPT
-    from .models import Message, today
+    from .models import Friend, Message, today
     from .secrets import Vault
     from .service import run_batch
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -30,6 +30,29 @@ def self_test(output: Path, app: QApplication) -> int:
     try:
         with tempfile.TemporaryDirectory(prefix='SparkMate-smoke-') as folder:
             win = MainWindow(Path(folder), demo=True)
+            def mock_state(token):
+                return {'cookies': [{'name': 'sessionid', 'value': token,
+                                     'domain': '.douyin.com', 'path': '/'}], 'origins': []}
+            accounts = win.accounts
+            state_a, state_b = mock_state('SYNTHETIC-SMOKE-A'), mock_state('SYNTHETIC-SMOKE-B')
+            a = accounts.remember('100001', state_a, label='演示大号')
+            b = accounts.remember('200002', state_b, label='演示小号')
+            win.store.save_friends(a, win.friends)
+            win.store.select(a, [friend.key for friend in win.friends if friend.selected])
+            accounts.activate(a)
+            win.account = a
+            result['multi_account_vaults'] = (accounts.vault(a).load() == state_a
+                and accounts.vault(b).load() == state_b
+                and b'SYNTHETIC-SMOKE-A' not in accounts.vault(a).path.read_bytes())
+            demo_group = Friend('demo-group', '周末小分队', streak='72', conversation_type=2)
+            win.store.save_friends(win.account, [demo_group])
+            win.refresh()
+            result['account_selector'] = (win.account_select.count() == 3
+                and win.account_select.currentData() == a and win.account_select.findData(b) > 0)
+            stored_group = next(f for f in win.friends if f.key == demo_group.key)
+            result['group_storage'] = stored_group.conversation_type == 2 and not stored_group.selected
+            # A self-test has no app.exec() loop to flush replaced row widgets.
+            app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             win.show()
             app.processEvents()
             win.grab().save(str(output.with_suffix('.png')))
@@ -45,6 +68,7 @@ def self_test(output: Path, app: QApplication) -> int:
             win.history_status.setCurrentIndex(win.history_status.findData('skipped'))
             from PySide6.QtWidgets import QPushButton
             next(b for b in win.findChildren(QPushButton) if '发送记录' in b.text()).click()
+            app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             app.processEvents()
             result['skip_history'] = (win.history_table.rowCount() == 1
                 and win.history_table.item(0, 1).text() == friend.name
@@ -55,7 +79,14 @@ def self_test(output: Path, app: QApplication) -> int:
             vault.save({'cookies': [], 'origins': []})
             result['vault_roundtrip'] = vault.load() == {'cookies': [], 'origins': []}
             html = Path(folder)/'offline.html'
-            html.write_text('<title>Spark Mate packaged browser</title>', encoding='utf-8')
+            html.write_text('''<title>Spark Mate packaged browser</title>
+                <div data-e2e="conversation-item"><span class="ConversationItemtitle">Demo group</span></div>
+                <div class="RightPanelHeaderconvHeader">Demo group</div>
+                <script>
+                const group={id:'demo-group',type:2,lastMessageIndexV2:'1'};
+                document.querySelector('[data-e2e]').__reactProps$smoke={conversation:group};
+                document.querySelector('.RightPanelHeaderconvHeader').__reactProps$smoke={curConversation:group};
+                </script>''', encoding='utf-8')
             original_home = browser_module.HOME
             browser_module.HOME = html.as_uri()
             session = DouyinSession(vault, Event(), lambda _: None)
@@ -67,6 +98,25 @@ def self_test(output: Path, app: QApplication) -> int:
                     result['browser_reused'] = chat.page is page
                 result['browser'] = page.title()
                 result['im_bridge_loaded'] = page.evaluate(IM_SCRIPT, {'op': 'status'}) == {'ready': False}
+                contacts = chat.visible_friends()
+                result['group_adapter'] = (len(contacts) == 1 and contacts[0].key == demo_group.key
+                                          and contacts[0].conversation_type == 2
+                                          and chat.read('snapshot')['conversation']['type'] == 2)
+                browser = session._browser
+                isolated = True
+                for account, expected in ((a, 'SYNTHETIC-SMOKE-A'), (b, 'SYNTHETIC-SMOKE-B'),
+                                          (a, 'SYNTHETIC-SMOKE-A')):
+                    previous_page = page
+                    session.select_account(account, accounts.vault(account))
+                    with session.open(visible=False) as (context, chat):
+                        page = chat.page
+                        values = [cookie['value'] for cookie in context.cookies()
+                                  if cookie['name'] == 'sessionid']
+                        isolated &= (values == [expected] and previous_page.is_closed()
+                            and page is not previous_page and session._browser is browser
+                            and page.evaluate('typeof window.smokeMarker') == 'undefined')
+                        page.evaluate('window.smokeMarker = true')
+                result['account_context_isolation'] = bool(isolated)
             finally:
                 session.close()
                 browser_module.HOME = original_home
@@ -74,7 +124,9 @@ def self_test(output: Path, app: QApplication) -> int:
             win.close()
             result['ok'] = all(result.get(key) for key in (
                 'window_visible', 'real_send_disabled', 'vault_roundtrip',
-                'browser_kept_open', 'browser_reused', 'browser_closed_on_exit', 'im_bridge_loaded', 'skip_history'))
+                'browser_kept_open', 'browser_reused', 'browser_closed_on_exit', 'im_bridge_loaded',
+                'skip_history', 'group_storage', 'group_adapter', 'multi_account_vaults',
+                'account_selector', 'account_context_isolation'))
     except Exception as exc:  # noqa: BLE001 -- packaged smoke emits a failure receipt on any exception
         result['error'] = str(exc)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')

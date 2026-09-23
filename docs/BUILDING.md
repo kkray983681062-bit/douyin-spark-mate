@@ -50,7 +50,7 @@ $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path (Get-Location) '.browsers'
 | `browser.py`、`page_scripts.js` | 登录、会话同步和网页方式发送 |
 | `direct.py`、`im_bridge.js` | 文字 / emoji 接口适配与回执确认 |
 | `service.py`、`worker.py` | 发送队列、取消和后台执行 |
-| `storage.py`、`secrets.py` | 本地设置、历史和加密登录态 |
+| `accounts.py`、`storage.py`、`secrets.py` | 多账号目录、本地设置、历史和独立加密登录态 |
 | `tests/` | 虚构数据及离线回归测试 |
 | `tools/` | 图标准备、打包和安装测试 |
 

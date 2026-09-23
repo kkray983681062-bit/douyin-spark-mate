@@ -34,7 +34,7 @@
   if (request.mode === 'friends') {
     return [...document.querySelectorAll('[data-e2e="conversation-item"]')].filter(visible).map(el => {
       const info = conversation(el);
-      if (info?.type !== 1 || !info?.id) return null;
+      if (![1, 2].includes(info?.type) || !info?.id) return null;
       const title = el.querySelector('[class$="Itemtitle"]') || el.querySelector('[title]');
       const name = clean(title?.textContent || el.innerText.split('\n')[0]);
       if (!name) return null;
@@ -42,7 +42,7 @@
       const flame = el.querySelector('[class*="StreaknormalText"]');
       el.setAttribute('data-spark-key', String(info.id));
       return {key: String(info.id), name, avatar: img?.currentSrc || img?.src || '',
-        streak: clean(flame?.textContent), identity: String(info.id)};
+        streak: clean(flame?.textContent), identity: String(info.id), conversation_type: info.type};
     }).filter(Boolean);
   }
 
@@ -61,7 +61,7 @@
       }).filter(Boolean);
   }
 
-  if (!current?.id || current.type !== 1) return {conversation: null, messages: []};
+  if (!current?.id || ![1, 2].includes(current.type)) return {conversation: null, messages: []};
   const knownBoundary = [current.lastMessageIndexV2, current.maxIndexV2FromServer]
     .some(n => /^\d+$/.test(String(n ?? '')));
   const result = {conversation: {id: String(current.id), type: current.type, watermark: watermark(current),
@@ -74,6 +74,7 @@
     const msg = read(box, ['message']);
     if (!msg || msg.isFromMe !== true || msg.visible === false || msg.isRecalled || msg.isRefMessage) continue;
     if (String(msg.conversationId) !== String(current.id) || !msg.clientId || ids.has(msg.clientId)) continue;
+    if (msg.conversationType !== undefined && msg.conversationType !== current.type) continue;
     const content = msg.parsedContent || {};
     let matches = false;
     if (payload.kind === 'text') matches = msg.type === 7 && clean(content.text) === clean(payload.value);

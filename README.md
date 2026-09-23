@@ -4,11 +4,11 @@
 
 **扫码登录，自选好友，自定义文字和表情，一键给朋友续上问候。**
 
-免费的 Windows 抖音续火花桌面软件，提供封装好的 EXE。支持火花好友优先排序、批量勾选、文字 / emoji、图片 / GIF、抖音原生表情、好友专属内容和发送记录。下载后即可使用，无需安装 Python。
+免费的 Windows 抖音续火花桌面软件，提供封装好的 EXE。支持多账号切换、好友和群聊选择、火花优先排序、文字 / emoji、图片 / GIF、抖音原生表情、专属内容和发送记录。下载后即可使用，无需安装 Python。
 
 **[下载 Windows 版](https://github.com/kkray983681062-bit/douyin-spark-mate/releases/latest)** · [English](README.en.md) · [完整功能](docs/FEATURES.md) · [隐私说明](docs/PRIVACY.md) · [源码构建](docs/BUILDING.md) · [更新记录](CHANGELOG.md)
 
-Douyin streak keeper for Windows: QR-code login, selected friends, custom messages and emoji, per-friend templates, and one-click sending.
+Douyin streak keeper for Windows: QR-code login, saved-account switching, selected friends and groups, custom messages and emoji, and one-click sending.
 
 ![克克咪火花搭子界面，使用模拟联系人](docs/images/app-preview.png)
 
@@ -18,33 +18,38 @@ Douyin streak keeper for Windows: QR-code login, selected friends, custom messag
 
 *0.1.5 起可按轮次和结果查看跳过明细。旧版没有保存的跳过明细不会自动补造。*
 
+**0.1.7 新增多账号切换，并包含群聊支持。升级后请重新同步好友以读取已有群聊；新同步的群聊默认不勾选。**
+
 ## 下载与使用
 
 前往 [Releases](https://github.com/kkray983681062-bit/douyin-spark-mate/releases/latest)，按需下载：
 
 | 文件 | 用途 |
 | --- | --- |
-| `kekemi-spark-mate-0.1.5-windows-x64-setup.exe` | 安装版，适合直接安装使用 |
-| `kekemi-spark-mate-0.1.5-windows-x64-portable.zip` | 便携版，完整解压后运行 `克克咪 火花搭子.exe` |
-| `douyin-spark-mate-0.1.5-source.zip` | 对应版本源码 |
-| `SHA256SUMS.txt` | 下载文件校验值 |
+| [kekemi-spark-mate-0.1.7-windows-x64-setup.exe](https://github.com/kkray983681062-bit/douyin-spark-mate/releases/download/v0.1.7/kekemi-spark-mate-0.1.7-windows-x64-setup.exe) | 安装版，适合直接安装使用 |
+| [kekemi-spark-mate-0.1.7-windows-x64-portable.zip](https://github.com/kkray983681062-bit/douyin-spark-mate/releases/download/v0.1.7/kekemi-spark-mate-0.1.7-windows-x64-portable.zip) | 便携版，完整解压后运行 `克克咪 火花搭子.exe` |
+| [douyin-spark-mate-0.1.7-source.zip](https://github.com/kkray983681062-bit/douyin-spark-mate/releases/download/v0.1.7/douyin-spark-mate-0.1.7-source.zip) | 对应版本源码 |
+| [SHA256SUMS.txt](https://github.com/kkray983681062-bit/douyin-spark-mate/releases/download/v0.1.7/SHA256SUMS.txt) | 下载文件校验值 |
 
 适用于 **Windows 10 / 11，64 位**。便携版需保留同目录的 `_internal` 文件夹。升级时先停止旧版任务并关闭程序，再打开新版；同一 Windows 用户的本地设置和历史继续沿用。
 
 1. **扫码登录**：在抖音官方窗口使用手机扫码；如果出现验证码，由本人在该窗口完成。
-2. **同步好友**：读取已有单聊联系人。有火花的好友排在前面，支持搜索，点击整行即可勾选。
+2. **同步好友**：读取已有单聊和群聊。有火花的会话排在前面，支持昵称 / 群名搜索，点击整行即可勾选；新同步的群聊默认不勾选。
 3. **准备内容**：填写统一消息，也可以给某位好友单独设置内容，或使用保存的模板。
 4. **一键续火花**：点击后按所选名单发送，界面显示进度与结果。可随时停止后续任务。
 
 首次使用建议先选择一位好友，确认内容和效果后再增加收件人。
+
+点击左侧 **添加账号**，为每个账号分别扫码；之后从账号下拉框选择并等待核对完成即可切换。**管理账号**中可修改备注、重新扫码或忘记登录。好友、群聊、勾选、草稿、模板和记录按账号保存；发送等操作结束后才能切换，切换本身不会发送消息。失效登录需要本人重新扫码，临时网络错误可稍后重试。
 
 ## 功能一览
 
 | 功能 | 说明 |
 | --- | --- |
 | 扫码登录 | 无需在软件里输入抖音密码；登录状态由当前 Windows 用户加密保存 |
+| 多账号切换 | 独立记住登录，核对账号后切换；支持备注、重新扫码及忘记登录 |
 | 火花好友优先 | 有火花的好友置顶，数字天数从高到低排列，减少翻找 |
-| 自选好友 | 搜索昵称、整行勾选、全选当前列表、取消选择；仅向选中的单聊好友发送 |
+| 自选好友 / 群聊 | 搜索昵称或群名、整行勾选、全选当前列表、取消选择；仅向选中的已有会话发送 |
 | 自定义消息 | 支持文字、Unicode emoji、PNG / JPG / WebP / GIF 图片和网页可读取的抖音原生表情 |
 | 好友专属内容 | 统一消息与每个好友的专属消息并存，可保存、切换多个模板 |
 | 文字接口发送 | 文字 / emoji 通过已登录的私信模块提交，无需逐个打开聊天页和等待聊天记录 |
@@ -77,8 +82,8 @@ Douyin streak keeper for Windows: QR-code login, selected friends, custom messag
 
 ## 检索关键词
 
-中文：**抖音一键续火花、抖音续火花、抖音自动续火花、续火花软件、续火花工具、火花搭子、克克咪、扫码登录、自定义表情、自定义消息、好友批量选择、Windows EXE、免费开源。**
+中文：**抖音一键续火花、抖音续火花、抖音自动续火花、续火花软件、续火花工具、火花搭子、克克咪、扫码登录、多账号切换、群聊续火花、自定义表情、自定义消息、好友批量选择、Windows EXE、免费开源。**
 
-English: Douyin streak keeper, Douyin spark, one-click messaging, QR-code login, custom emoji, desktop app, Windows, Python, PySide6, Playwright.
+English: Douyin streak keeper, Douyin spark, one-click messaging, QR-code login, multi-account, group chat, custom emoji, desktop app, Windows, Python, PySide6, Playwright.
 
 参考与实现边界见 [功能说明](docs/FEATURES.md)。

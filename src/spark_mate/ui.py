@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
     QComboBox,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -31,6 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import APP_NAME, __version__
+from .accounts import Accounts
 from .composer import Composer
 from .models import Friend, Message, today
 from .service import build_plan
@@ -98,6 +100,9 @@ class MainWindow(QMainWindow):
         self.root, self.demo = Path(root), demo
         self.store = Store(root)
         self.store.recover_inflight()
+        self.accounts = Accounts(self.store)
+        if not demo:
+            self.accounts.import_legacy()
         self.worker = None
         self.browser_worker = None
         self.closing = False
@@ -107,7 +112,7 @@ class MainWindow(QMainWindow):
         self.avatar_cache = {}
         self.network = QNetworkAccessManager(self)
         self.account = 'demo-account' if demo else self.store.setting('', 'current_account', '')
-        if not demo and not (self.root/'login.dpapi').exists():
+        if not demo and not self.accounts.get(self.account):
             self.account = ''
         if demo:
             self.store.save_friends(self.account, [Friend('demo-01', '小雨', streak='128'),
@@ -157,12 +162,27 @@ class MainWindow(QMainWindow):
                 nav.setChecked(True)
         side.addStretch()
         self.account_label = label('', 'title')
+        self.account_label.setWordWrap(True)
         side.addWidget(self.account_label)
         self.account_note = label('', 'muted', True)
         side.addWidget(self.account_note)
+        self.account_select = QComboBox()
+        self.account_select.setMinimumContentsLength(8)
+        self.account_select.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.account_select.setToolTip('选择已保存的账号，核对成功后切换')
+        self.account_select.activated.connect(
+            lambda index: self.switch_account(self.account_select.itemData(index)))
+        side.addWidget(self.account_select)
+        account_actions = QHBoxLayout()
+        self.add_account_btn = button('添加账号', lambda: self.account_action('add'), 'link')
+        self.manage_accounts_btn = button('管理账号', self.manage_accounts, 'link')
+        account_actions.addWidget(self.add_account_btn)
+        account_actions.addWidget(self.manage_accounts_btn)
+        side.addLayout(account_actions)
         self.login_btn = button('扫码登录抖音', self.login, 'primary')
         side.addWidget(self.login_btn)
-        self.logout_btn = button('退出当前账号', self.logout, 'link')
+        self.logout_btn = button('忘记当前登录', self.logout, 'link')
+        self.logout_btn.setToolTip('删除当前账号的登录凭据，保留好友、模板和发送记录')
         side.addWidget(self.logout_btn)
         side.addSpacing(16)
         side.addWidget(label(f'v{__version__}  ·  免费使用', 'muted'))
@@ -194,13 +214,13 @@ class MainWindow(QMainWindow):
         friends_card, friends_layout = card()
         friends_card.setMinimumWidth(340)
         title_row = QHBoxLayout()
-        title_row.addWidget(label('选择好友', 'title'))
+        title_row.addWidget(label('选择好友 / 群聊', 'title'))
         title_row.addStretch()
         self.sync_btn = button('↻  同步好友', lambda: self.start('sync'), 'link')
         title_row.addWidget(self.sync_btn)
         friends_layout.addLayout(title_row)
         self.search = QLineEdit()
-        self.search.setPlaceholderText('搜索好友昵称…')
+        self.search.setPlaceholderText('搜索好友昵称或群名…')
         self.search.textChanged.connect(self.filter_friends)
         friends_layout.addWidget(self.search)
         select_row = QHBoxLayout()
@@ -214,7 +234,7 @@ class MainWindow(QMainWindow):
         friends_layout.addLayout(select_row)
         self.table = FriendTable(0, 3)
         self.table.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.table.setHorizontalHeaderLabels(['选择', '好友', '今日状态'])
+        self.table.setHorizontalHeaderLabels(['选择', '好友 / 群聊', '今日状态'])
         self.table.verticalHeader().hide()
         self.table.setShowGrid(False)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -230,7 +250,7 @@ class MainWindow(QMainWindow):
         self.empty_label = label('扫码登录后，点击「同步好友」\n你的聊天联系人会显示在这里。', 'muted', True)
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         friends_layout.addWidget(self.empty_label)
-        friends_layout.addWidget(label('火花好友优先 · 点击整行勾选或取消', 'muted'))
+        friends_layout.addWidget(label('火花会话优先 · 点击整行勾选或取消', 'muted'))
         columns.addWidget(friends_card, 1)
 
         self.message_card, ml = card()
@@ -255,10 +275,10 @@ class MainWindow(QMainWindow):
         save_row.addWidget(button('恢复统一内容', self.reset_override, 'link'))
         save_row.addStretch()
         ml.addLayout(save_row)
-        self.save_note = label('可为不同好友设置专属内容。', 'muted', True)
+        self.save_note = label('可为不同好友或群聊设置专属内容。', 'muted', True)
         ml.addWidget(self.save_note)
         ml.addStretch()
-        ml.addWidget(label('文字 / emoji 无需逐个打开聊天页。\n当天已发送或待确认的好友会自动跳过。', 'muted', True))
+        ml.addWidget(label('文字 / emoji 无需逐个打开聊天页。\n当天已发送或待确认的会话会自动跳过。', 'muted', True))
         columns.addWidget(self.message_card, 1)
         task_layout.addLayout(columns, 1)
 
@@ -305,7 +325,7 @@ class MainWindow(QMainWindow):
         hl.addLayout(history_filters)
         hl.addWidget(label('全部轮次显示最近 200 条；选择某一轮可查看该轮完整明细。', 'muted', True))
         self.history_table = QTableWidget(0, 4)
-        self.history_table.setHorizontalHeaderLabels(['时间', '好友', '结果', '说明'])
+        self.history_table.setHorizontalHeaderLabels(['时间', '好友 / 群聊', '结果', '说明'])
         self.history_table.verticalHeader().hide()
         self.history_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.history_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -321,25 +341,31 @@ class MainWindow(QMainWindow):
         help_text.setStyleSheet('border:none;background:white;padding:12px;')
         help_text.setMarkdown('''### 开始使用
 1. 点击左下角 **扫码登录抖音**，在抖音官方窗口使用手机扫码。验证码和短信验证需要本人完成。
-2. 点击 **同步好友**，勾选想续火花的人。首次同步较多联系人时需要一点时间。
-3. 编辑统一内容，也可以在下拉框中选某个好友设置专属内容。可以保存多个模板。
-4. 点击 **一键续火花** 就会向勾选的人发送。发送中可以停止，当前消息会先完成结果确认。
+2. 点击 **同步好友**，勾选想续火花的好友或群聊。群聊会单独标识，首次同步默认不勾选。
+3. 编辑统一内容，也可以在下拉框中选某个好友或群聊设置专属内容。可以保存多个模板。
+4. 点击 **一键续火花** 就会向勾选的会话发送。发送中可以停止，当前消息会先完成结果确认。
+
+### 多账号切换
+点击左侧 **添加账号**，为每个账号分别扫码；之后从账号下拉框选择，核对成功后切换。
+**管理账号**可修改备注、重新扫码或忘记登录。好友、群聊、勾选、草稿、模板、记录和当天去重按账号保存。
+发送、同步或登录期间不能切换；停止后需等待当前结果记录完成。切换本身不会发送消息。
+登录失效时只需为对应账号重新扫码；网络故障可稍后重试。切换需要联网核对，不保证瞬间完成或登录永久有效。
 
 ### 三种内容
 - **文字 / emoji**：输入文字，或点选常用 emoji。首次连接私信服务后，通过接口发送，无需逐个打开好友聊天页；登录窗口继续保留。
 - **图片表情**：选择 PNG、JPG、WebP 或 GIF。当前仍通过聊天页发送。软件保存一份副本，原文件移动不影响已保存的素材。GIF 的动图效果以平台实际呈现为准。
-- **抖音表情**：先选一个好友，再读取该会话里可用的原生表情。读取本身不会发送。
+- **抖音表情**：先选一个好友或群聊，再读取该会话里可用的原生表情。读取本身不会发送。
 
 ### 发送结果
 **已发送**表示获得消息发送确认，不等于对方已读，也不保证火花已经点亮。火花状态以抖音显示为准。
 **待确认**表示已执行发送但没拿到可靠回执，今天会自动跳过，避免重复。
-**已跳过**会单独记录好友姓名和原因。在“发送记录”里选择本轮，再选“只看已跳过”即可查看。
+**已跳过**会单独记录好友昵称或群名和原因。在“发送记录”里选择本轮，再选“只看已跳过”即可查看。
 旧版没有保存的跳过明细不会自动补造，新版开始逐轮保存。
 抖音需要验证或账号发生变化时，会停止本轮操作。网页改版也可能需要更新本软件。
 
 ### 本地数据
 登录状态使用 Windows 当前用户加密，好友、模板和记录保存在本机。
-退出登录仅删除本机登录凭据，保留模板和历史。源码包不包含你的账号数据。
+忘记登录仅删除所选账号的本机登录凭据，保留好友、模板和历史；其他账号不受影响。源码包不包含你的账号数据。
 本软件为个人好友互动工具，与抖音官方无隶属关系。
 ''')
         help_layout.addWidget(help_text)
@@ -355,15 +381,18 @@ class MainWindow(QMainWindow):
             return None
 
     def refresh(self):
-        draft = self.composer.message(validate=False) if getattr(self, 'loaded_account', None) == self.account else None
+        same_account = getattr(self, 'loaded_account', None) == self.account
+        draft = self.composer.message(validate=False) if same_account else None
+        saved_draft = self.store.setting(self.account, 'draft') if not same_account and self.account else None
         self.loading = True
         self.friends = self.store.friends(self.account) if self.account else []
-        previous_scope = self.scope.currentData()
+        previous_scope = self.scope.currentData() if same_account else (saved_draft or {}).get('scope', '')
         self.scope.blockSignals(True)
         self.scope.clear()
-        self.scope.addItem('统一消息 · 用于没有专属内容的好友', '')
+        self.scope.addItem('统一消息 · 用于没有专属内容的会话', '')
         for f in self.friends:
-            self.scope.addItem(f'给 {f.name} 的专属消息  · {f.key[-6:]}', f.key)
+            name = ('[群聊] ' if f.conversation_type == 2 else '') + f.name
+            self.scope.addItem(f'给 {name} 的专属消息  · {f.key[-6:]}', f.key)
         pos = self.scope.findData(previous_scope)
         self.scope.setCurrentIndex(max(0, pos))
         self.scope.blockSignals(False)
@@ -371,15 +400,94 @@ class MainWindow(QMainWindow):
         self.load_current()
         if draft is not None and self.loaded_scope == (previous_scope or ''):
             self.composer.load(draft)
+        elif saved_draft and self.loaded_scope == saved_draft.get('scope', ''):
+            self.composer.load(Message.from_dict(saved_draft.get('message')))
         self.refresh_templates()
         self.refresh_table()
-        self.account_label.setText('演示账号' if self.demo else ('已保存登录状态' if self.account else '还没有登录'))
-        self.account_note.setText('模拟联系人 · 不连接抖音' if self.demo else
-                                 ('本次操作会检查登录有效性' if self.account else '用手机抖音扫码即可开始'))
-        self.chip.setText('演示模式 · 模拟数据' if self.demo else ('●  本地登录' if self.account else '○  等待扫码'))
-        self.login_btn.setText('打开抖音窗口' if self.account else '扫码登录抖音')
+        self.refresh_accounts()
         self.loading = False
         self.set_busy(self.worker is not None)
+
+    def refresh_accounts(self):
+        current = self.accounts.get(self.account)
+        self.account_select.blockSignals(True)
+        self.account_select.clear()
+        self.account_select.addItem('选择已保存账号…', '')
+        for item in self.accounts.all():
+            status = '已保存' if item['has_login'] and item['status'] == 'saved' else '需扫码'
+            suffix = (item['user_id'] or item['account'])[-6:]
+            name = item['label']
+            brief = self.account_select.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight, 65)
+            display = name if name == f'账号 · {suffix}' else f'{brief} · {suffix}'
+            self.account_select.addItem(display, item['account'])
+            self.account_select.setItemData(self.account_select.count()-1,
+                f'{name}\n账号标识末六位：{suffix}\n{status}', Qt.ItemDataRole.ToolTipRole)
+        self.account_select.setCurrentIndex(max(0, self.account_select.findData(self.account)))
+        self.account_select.blockSignals(False)
+        title = current['label'] if current else ''
+        needs_login = bool(current and current['status'] != 'saved')
+        self.account_label.setText('演示账号' if self.demo else (f'当前：{title}' if current else '还没有登录'))
+        self.account_note.setText('模拟联系人 · 不连接抖音' if self.demo else
+            ('此账号需重新扫码，记录已保留' if needs_login else
+             '已保存登录 · 操作前核对账号' if current else '添加账号后可记住登录并切换'))
+        suffix = (current['user_id'] or current['account'])[-6:] if current else ''
+        self.chip.setText('演示模式 · 模拟数据' if self.demo else
+                         (f'●  {title[:12]} · {suffix}' if current else '○  等待扫码'))
+        self.login_btn.setText('重新扫码登录' if needs_login else '打开抖音窗口' if self.account else '扫码登录抖音')
+
+    def stash_draft(self):
+        if self.account and not self.loading and not self.closed:
+            self.store.set_setting(self.account, 'draft',
+                {'scope': self.loaded_scope, 'message': self.composer.message(validate=False).as_dict()})
+
+    def account_action(self, action, target=None):
+        if self.worker:
+            return
+        self.stash_draft()
+        self.start(action, target)
+
+    def switch_account(self, target):
+        if self.worker or not target:
+            return
+        # A selection is a request, not an active identity, until the worker verifies it.
+        self.refresh_accounts()
+        self.account_action('switch', target)
+
+    def manage_accounts(self):
+        if self.worker or self.demo:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle('管理已保存账号')
+        dialog.setMinimumWidth(380)
+        layout = QVBoxLayout(dialog)
+        picker = QComboBox()
+        for item in self.accounts.all():
+            suffix = (item['user_id'] or item['account'])[-6:]
+            status = '已保存' if item['has_login'] and item['status'] == 'saved' else '需扫码'
+            picker.addItem(f'{item["label"]} · {suffix} · {status}', item['account'])
+        picker.setCurrentIndex(max(0, picker.findData(self.account)))
+        layout.addWidget(picker)
+        layout.addWidget(label('重新扫码必须是所选账号。\n忘记登录会保留该账号的好友、模板和记录。', 'muted', True))
+        def launch(action):
+            target = picker.currentData()
+            dialog.accept()
+            self.account_action(action, target)
+        def rename():
+            item = self.accounts.get(picker.currentData())
+            name, ok = QInputDialog.getText(dialog, '账号备注', '备注（最多 24 字）：', text=item['label'])
+            if ok:
+                try:
+                    self.accounts.rename(item['account'], name)
+                except ValueError as exc:
+                    QMessageBox.information(dialog, '请检查一下', str(exc))
+                    return
+                dialog.accept()
+                self.refresh_accounts()
+        layout.addWidget(button('切换到这个账号', lambda: launch('switch'), 'primary'))
+        layout.addWidget(button('重新扫码登录这个账号', lambda: launch('reauth')))
+        layout.addWidget(button('修改账号备注', rename))
+        layout.addWidget(button('忘记这个账号的登录', lambda: launch('forget'), 'link'))
+        dialog.exec()
 
     def refresh_templates(self):
         self.template_combo.clear()
@@ -416,6 +524,8 @@ class MainWindow(QMainWindow):
             texts.addWidget(name)
             streak = f.streak.strip()
             detail = f'🔥 {streak}{" 天" if streak.isdecimal() else ""}' if streak else '抖音单聊'
+            if f.conversation_type == 2:
+                detail = f'群聊 · {detail}' if streak else '抖音群聊'
             if f.override:
                 detail += '  ·  专属内容'
             texts.addWidget(label(detail, 'muted'))
@@ -440,7 +550,7 @@ class MainWindow(QMainWindow):
         self.history_batch.addItem('全部轮次', None)
         for batch in self.store.batches(self.account) if self.account else []:
             stamp = datetime.fromisoformat(batch['created']).astimezone().strftime('%m-%d %H:%M:%S')
-            self.history_batch.addItem(f'{stamp} · {batch["total"]} 位好友', batch['id'])
+            self.history_batch.addItem(f'{stamp} · {batch["total"]} 个会话', batch['id'])
         self.history_batch.setCurrentIndex(max(0, self.history_batch.findData(selected)))
         self.history_batch.blockSignals(False)
         history = self.store.history(self.account, batch_id=self.history_batch.currentData(),
@@ -505,8 +615,11 @@ class MainWindow(QMainWindow):
     def update_count(self):
         count = sum(f.selected for f in self.friends)
         self.count_label.setText(f'{count} / {len(self.friends)}')
-        self.summary.setText(f'已选 {count} 位好友')
-        self.send_btn.setEnabled(bool(self.account and count and not self.worker and not self.demo))
+        groups = sum(f.selected and f.conversation_type == 2 for f in self.friends)
+        self.summary.setText(f'已选 {count - groups} 位好友' + (f' · {groups} 个群聊' if groups else ''))
+        saved = self.accounts.get(self.account)
+        valid = not saved or saved['status'] == 'saved'
+        self.send_btn.setEnabled(bool(self.account and count and valid and not self.worker and not self.demo))
 
     def persist_message(self, key, message):
         if key:
@@ -518,6 +631,7 @@ class MainWindow(QMainWindow):
         message = self.composer.message()
         self.persist_message(self.scope.currentData() or '', message)
         self.loaded_message = message
+        self.stash_draft()
         self.save_note.setText('已保存到本机 ✓')
         self.refresh_table()
         return message
@@ -542,7 +656,7 @@ class MainWindow(QMainWindow):
             pass
         self.friends = self.store.friends(self.account)
         self.load_current()
-        self.save_note.setText('这里的内容仅用于该好友。' if self.loaded_scope else '没有专属内容的好友将使用统一消息。')
+        self.save_note.setText('这里的内容仅用于该会话。' if self.loaded_scope else '没有专属内容的会话将使用统一消息。')
 
     def reset_override(self):
         key = self.scope.currentData()
@@ -570,10 +684,14 @@ class MainWindow(QMainWindow):
         self.safely(save)
 
     def login(self):
-        self.start('open' if self.account else 'login')
+        current = self.accounts.get(self.account)
+        if current and current['status'] != 'saved':
+            self.account_action('reauth', self.account)
+        else:
+            self.start('open' if self.account else 'login')
 
     def logout(self):
-        self.start('logout')
+        self.account_action('logout')
 
     def read_stickers(self):
         key = self.scope.currentData()
@@ -582,7 +700,7 @@ class MainWindow(QMainWindow):
         if target:
             self.start('stickers', target)
         else:
-            QMessageBox.information(self, '先选择一个好友', '请勾选一个好友，用于读取该聊天中的可用表情。')
+            QMessageBox.information(self, '先选择一个会话', '请勾选一个好友或群聊，用于读取该聊天中的可用表情。')
 
     def send(self):
         if self.worker or self.demo or not self.account:
@@ -600,7 +718,7 @@ class MainWindow(QMainWindow):
         if self.demo:
             self.status_label.setText('这是界面演示，未连接真实抖音账号。')
             return
-        if action != 'login' and not self.account:
+        if action not in {'login', 'add', 'switch', 'reauth', 'forget'} and not self.account:
             QMessageBox.information(self, '先登录抖音', '请点击左下角扫码登录。')
             return
         if self.browser_worker is None:
@@ -615,10 +733,15 @@ class MainWindow(QMainWindow):
         self.worker = self.browser_worker
         self.set_busy(True)
         self.progress.setRange(0, 0)
-        self.status_label.setText({'login': '正在打开抖音官方登录窗口…', 'sync': '正在同步聊天好友…',
+        self.status_label.setText({'login': '正在打开抖音官方登录窗口…', 'sync': '正在同步好友和群聊…',
                                   'stickers': '正在读取可用原生表情…', 'send': '正在准备发送…',
-                                  'open': '正在打开已有抖音窗口…', 'logout': '正在退出账号…'}[action])
-        self.worker.submit(action, self.account, payload)
+                                  'open': '正在打开已有抖音窗口…', 'logout': '正在忘记当前登录…',
+                                  'add': '正在添加账号，请在独立窗口扫码…',
+                                  'reauth': '正在重新扫码，请登录所选账号…',
+                                  'switch': '正在恢复登录并核对目标账号，完成前仍保留原账号…',
+                                  'forget': '正在忘记所选账号登录，保留记录…'}[action])
+        if not self.worker.submit(action, self.account, payload):
+            self.status_label.setText('上一项操作尚未结束，请等待或先点击停止。')
 
     def set_busy(self, busy):
         for widget in (self.table, self.search, self.select_all, self.select_none):
@@ -626,6 +749,9 @@ class MainWindow(QMainWindow):
         self.message_card.setEnabled(not busy and bool(self.account))
         self.login_btn.setEnabled(not busy and not self.demo)
         self.logout_btn.setEnabled(not busy and bool(self.account) and not self.demo)
+        self.account_select.setEnabled(not busy and not self.demo)
+        self.add_account_btn.setEnabled(not busy and not self.demo)
+        self.manage_accounts_btn.setEnabled(not busy and bool(self.accounts.all()) and not self.demo)
         self.sync_btn.setEnabled(not busy and bool(self.account) and not self.demo)
         self.stop_btn.setEnabled(busy)
         self.update_count()
@@ -638,22 +764,23 @@ class MainWindow(QMainWindow):
             self.refresh_table()
 
     def on_result(self, action, value):
-        if action == 'logout':
-            self.account = ''
-            self.store.set_setting('', 'current_account', '')
+        if action in {'logout', 'forget'}:
+            self.account = value or ''
+            self.store.set_setting('', 'current_account', self.account)
             self.refresh()
-            self.status_label.setText('已退出登录并关闭抖音窗口，原有模板和记录保留在本机。')
+            self.status_label.setText('已忘记所选账号的登录，好友、模板和记录仍保留；其他账号不受影响。')
         elif action == 'open':
             self.status_label.setText('抖音窗口已打开。可以慢慢等待网页加载，再点击「同步好友」。')
-        elif action == 'login':
+        elif action in {'login', 'add', 'switch', 'reauth'}:
             self.account = value
             self.store.set_setting('', 'current_account', value)
             self.refresh()
-            self.status_label.setText('登录状态已加密保存，点击「同步好友」开始选择。')
+            self.status_label.setText('账号核对完成，登录已独立加密保存。可同步好友；切换后不会自动发送。')
         elif action == 'sync':
             self.store.save_friends(self.account, value)
             self.refresh()
-            self.status_label.setText(f'本次同步 {len(value)} 位单聊好友，可以勾选要联系的人。')
+            groups = sum(f.conversation_type == 2 for f in value)
+            self.status_label.setText(f'本次同步 {len(value) - groups} 位好友、{groups} 个群聊，请勾选要联系的对象。')
         elif action == 'stickers':
             self.store.set_setting(self.account, 'stickers', value)
             self.composer.set_stickers(value)
@@ -667,6 +794,7 @@ class MainWindow(QMainWindow):
                 self.refresh_history(value[0]['batch_id'])
 
     def on_failure(self, message):
+        self.refresh_accounts()
         self.status_label.setText(message)
         if not self.closing:
             QMessageBox.information(self, '本次操作未完成', message)
@@ -675,6 +803,7 @@ class MainWindow(QMainWindow):
         self.worker = None
         self.progress.setRange(0, 100)
         self.progress.setValue(100)
+        self.refresh_accounts()
         self.set_busy(False)
         if self.closing:
             self.close()
@@ -697,6 +826,7 @@ class MainWindow(QMainWindow):
             self.stop_btn.setEnabled(False)
 
     def closeEvent(self, event):
+        self.stash_draft()
         if self.worker:
             self.closing = True
             self.stop()

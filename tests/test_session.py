@@ -46,6 +46,15 @@ def test_manually_closed_browser_can_be_opened_again(session):
         assert [f.key for f in chat.visible_friends()] == ['c1', 'c2']
 
 
+def test_uncommitted_qr_login_does_not_require_existing_contacts_or_write_vault(session):
+    with session.open(saved=False, visible=False) as (context, chat):
+        context.add_cookies([{'name': 'sessionid', 'value': 'offline-login-only',
+                             'domain': '.douyin.com', 'path': '/'}])
+        chat.ensure_chat = lambda **_: pytest.fail('Empty-contact accounts must still reach identity verification')
+        assert session.login(persist=False)
+        assert not session.vault.path.exists()
+
+
 def test_slow_initial_response_does_not_block_access_to_the_open_window(session, chat_server, monkeypatch):
     chat_server.gate = Event()
     monkeypatch.setattr(browser_module, 'HOME', chat_server.url)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spark-mate"
-version = "0.1.5"
+version = "0.1.7"
 description = "克克咪 火花搭子：本地抖音好友消息助手"
 requires-python = ">=3.11"
 license = "MIT"

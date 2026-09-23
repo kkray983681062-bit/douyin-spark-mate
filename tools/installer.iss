@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.1.5"
+  #define AppVersion "0.1.7"
 #endif
 #define ProductName "克克咪 火花搭子"
 

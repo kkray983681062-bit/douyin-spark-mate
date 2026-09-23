@@ -8,7 +8,10 @@ A free Windows desktop helper for keeping in touch with selected Douyin friends.
 
 ## Features
 
+Version 0.1.7 adds saved-account switching and includes group-conversation support. Re-sync contacts after upgrading to load existing groups; newly synced groups are unselected by default.
+
 - Official Douyin QR-code login, with locally encrypted session storage.
+- Saved accounts with separate encrypted sessions, browser contexts, contacts, drafts, templates, history, and daily duplicate protection (0.1.7).
 - Streak contacts first, ordered by numeric streak days; search and select entire rows.
 - Custom text, emoji, local images / GIFs, and native stickers available in the web client.
 - Shared templates and individual content for each friend.
@@ -21,7 +24,9 @@ A free Windows desktop helper for keeping in touch with selected Douyin friends.
 
 Download the installer or portable archive from [Releases](https://github.com/kkray983681062-bit/douyin-spark-mate/releases/latest). Extract the complete portable archive and keep its `_internal` folder next to the executable. Windows 10 / 11 x64 is required.
 
-Log in by scanning the official QR code, sync existing one-to-one conversations, select friends, and prepare a message. Start with one recipient to check the result before sending to a larger selection.
+Log in by scanning the official QR code, sync existing conversations, select friends or groups, and prepare a message. Groups have a visible label and keep their own templates, history and daily duplicate protection. Start with one recipient to check the result before sending to a larger selection.
+
+In 0.1.7, use **添加账号** (Add account) to scan each account once, then select a saved account from the sidebar. Switching requires an online identity check and never sends messages automatically. **管理账号** (Manage accounts) supports aliases, reauthentication, and forgetting a login while keeping history. Switching is unavailable during an operation. Expired sessions require a new scan; temporary network errors retain the saved login for a later retry.
 
 ## How sending works
 

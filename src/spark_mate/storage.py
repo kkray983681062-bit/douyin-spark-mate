@@ -33,10 +33,14 @@ class Store:
                 account TEXT NOT NULL, key TEXT NOT NULL, name TEXT NOT NULL,
                 avatar TEXT NOT NULL, streak TEXT NOT NULL, identity TEXT NOT NULL,
                 selected INTEGER NOT NULL DEFAULT 0, override TEXT,
+                conversation_type INTEGER NOT NULL DEFAULT 1,
                 PRIMARY KEY(account,key));
             CREATE TABLE IF NOT EXISTS settings (
                 account TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
                 PRIMARY KEY(account,key));
+            CREATE TABLE IF NOT EXISTS accounts (
+                account TEXT PRIMARY KEY, user_id TEXT UNIQUE, label TEXT NOT NULL,
+                status TEXT NOT NULL, updated TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS templates (
                 account TEXT NOT NULL, name TEXT NOT NULL, message TEXT NOT NULL,
                 PRIMARY KEY(account,name));
@@ -56,6 +60,12 @@ class Store:
                 blocked_attempt_id TEXT, detail TEXT NOT NULL, created TEXT NOT NULL,
                 UNIQUE(batch_id,position));
         ''')
+        # 0.1.5 stored single chats only. Add their default type without replacing
+        # any selections, account settings, message templates, or send receipts.
+        with self.db:
+            columns = {r['name'] for r in self.db.execute('PRAGMA table_info(friends)')}
+            if 'conversation_type' not in columns:
+                self.db.execute('ALTER TABLE friends ADD COLUMN conversation_type INTEGER NOT NULL DEFAULT 1')
 
     def __enter__(self):
         return self
@@ -66,14 +76,16 @@ class Store:
     def save_friends(self, account: str, friends: list[Friend]) -> None:
         with self.db:
             for f in friends:
-                self.db.execute('''INSERT INTO friends(account,key,name,avatar,streak,identity)
-                    VALUES(?,?,?,?,?,?) ON CONFLICT(account,key) DO UPDATE SET
+                self.db.execute('''INSERT INTO friends(account,key,name,avatar,streak,identity,conversation_type)
+                    VALUES(?,?,?,?,?,?,?) ON CONFLICT(account,key) DO UPDATE SET
                     name=excluded.name,avatar=excluded.avatar,streak=excluded.streak,
-                    identity=excluded.identity''', (account, f.key, f.name, f.avatar, f.streak, f.identity))
+                    identity=excluded.identity,conversation_type=excluded.conversation_type''',
+                    (account, f.key, f.name, f.avatar, f.streak, f.identity, f.conversation_type))
 
     def friends(self, account: str) -> list[Friend]:
         friends = [Friend(r['key'], r['name'], r['avatar'], r['streak'], r['identity'],
-                          bool(r['selected']), Message.from_dict(json.loads(r['override'])) if r['override'] else None)
+                          bool(r['selected']), Message.from_dict(json.loads(r['override'])) if r['override'] else None,
+                          r['conversation_type'])
                    for r in self.db.execute('SELECT * FROM friends WHERE account=?', (account,))]
 
         def order(friend):

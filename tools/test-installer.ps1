@@ -1,6 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$installer = Join-Path $projectRoot 'dist\0.1.5\克克咪 火花搭子-0.1.5-windows-x64-setup.exe'
+$installer = Join-Path $projectRoot 'dist\0.1.7\克克咪 火花搭子-0.1.7-windows-x64-setup.exe'
 $registration = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{B7782606-4C63-4AFD-B8C2-68A955E05BF8}_is1'
 if (Test-Path -LiteralPath $registration) { throw 'Spark Mate is already installed; refusing to replace its registration during this test.' }
 $testFolder = [IO.Path]::GetFullPath((Join-Path $projectRoot ('outputs\installed-test-' + [Guid]::NewGuid().ToString('N'))))

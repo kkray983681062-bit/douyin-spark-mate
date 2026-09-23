@@ -64,7 +64,7 @@ class Composer(QWidget):
         sticker = QWidget()
         sl = QVBoxLayout(sticker)
         sl.setContentsMargins(0, 0, 0, 0)
-        hint = QLabel('从所选好友的抖音聊天中读取可用表情，\n选择后再点击底部按钮发送。')
+        hint = QLabel('从所选好友或群聊中读取可用表情，\n选择后再点击底部按钮发送。')
         hint.setObjectName('muted')
         hint.setWordWrap(True)
         self.stickers = QComboBox()

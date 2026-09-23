@@ -71,7 +71,7 @@ def test_explicit_server_rejection_is_failed(page):
         transport(page).send(Friend('0:1:100:201', '甲'), Message('text', 'hello'), lambda: None)
 
 
-def test_account_switch_or_group_stops_before_transmission(page):
+def test_account_switch_or_mislabeled_group_stops_before_transmission(page):
     direct = transport(page)
     with pytest.raises(IdentityMismatch):
         direct.open_target(Friend('0:2:100:203', '群'))

@@ -146,7 +146,7 @@ class ChatPage:
                 note = '本轮等待已结束，抖音窗口会继续保留。页面加载好后可再次点击「同步好友」。'
                 if access_error:
                     raise type(access_error)(str(access_error) + '。' + note)
-                raise ValueError('暂未读到可核对的单聊好友。' + note)
+                raise ValueError('暂未读到可核对的好友或群聊。' + note)
             elapsed = int(time.monotonic() - started)
             progress = (hint, elapsed)
             if progress != last_progress:
@@ -174,7 +174,7 @@ class ChatPage:
             self.check()
             for f in self.visible_friends():
                 found[f.key] = f
-            self.progress(f'正在读取好友 · 已找到 {len(found)} 人')
+            self.progress(f'正在读取好友和群聊 · 已找到 {len(found)} 个会话')
             pos = self.scroll()
             stagnant = stagnant + 1 if abs(pos['top'] - pos['old']) < 2 else 0
             if stagnant >= 3:
@@ -188,8 +188,10 @@ class ChatPage:
     def verify_target(self, friend: Friend) -> None:
         self.check_access()
         state = self.read('snapshot')
-        if not state.get('conversation') or state['conversation']['id'] != friend.key:
-            raise IdentityMismatch('当前聊天对象与所选好友不一致，已停止发送')
+        current = state.get('conversation')
+        if (not current or current['id'] != friend.key or
+                current['type'] != friend.conversation_type or friend.conversation_type not in (1, 2)):
+            raise IdentityMismatch('当前聊天对象或会话类型与所选对象不一致，已停止发送')
 
     def open_target(self, friend: Friend) -> None:
         self.check()
@@ -200,6 +202,8 @@ class ChatPage:
             self.check()
             matches = [f for f in self.visible_friends() if f.key == friend.key]
             if matches:
+                if any(f.conversation_type != friend.conversation_type for f in matches):
+                    raise IdentityMismatch('会话类型已改变，请重新同步好友和群聊')
                 items = self.page.locator(css_attr('data-spark-key', friend.key) + ':visible')
                 if items.count() != 1:
                     raise IdentityMismatch('会话身份不唯一，请刷新好友列表')
@@ -332,7 +336,8 @@ class ChatPage:
         while time.monotonic() < deadline:
             self.check_access()
             current = self.read('snapshot', message)
-            if not current.get('conversation') or current['conversation']['id'] != friend.key:
+            if (not current.get('conversation') or current['conversation']['id'] != friend.key or
+                    current['conversation']['type'] != friend.conversation_type):
                 raise SendUnknown('等待发送结果时会话发生改变，请核对聊天记录')
             fresh = [m for m in current['messages'] if m['id'] not in old and int(m['order']) > boundary]
             if len(fresh) > 1:
@@ -354,11 +359,26 @@ class DouyinSession:
     def __init__(self, vault: Vault, cancel: Event, progress: Callable[[str], None]):
         self.vault, self.cancel, self.progress = vault, cancel, progress
         self._pw = self._browser = self._context = self._chat = None
+        self.account = ''
+        self.verified_user = self.verified_cookie = ''
+
+    def select_account(self, account: str, vault: Vault) -> None:
+        if self.account == account and self.vault.path == vault.path:
+            return
+        if self._context:
+            try:
+                self._context.close()
+            except BrowserError:
+                pass
+        self._context = self._chat = None
+        self.account, self.vault = account, vault
+        self.verified_user = self.verified_cookie = ''
 
     def close(self) -> None:
         """Release the browser only on logout, application exit, or a lost connection."""
         browser, pw = self._browser, self._pw
         self._pw = self._browser = self._context = self._chat = None
+        self.verified_user = self.verified_cookie = ''
         try:
             if browser and browser.is_connected():
                 browser.close()
@@ -383,11 +403,16 @@ class DouyinSession:
             self.close()
         if not self._browser:
             configure_browser()
-            state = self.vault.load() if saved else None
             self.close()
             self._pw = sync_playwright().start()
             try:
                 self._browser = self._pw.chromium.launch(headless=not visible, channel='chromium')
+            except BrowserError:
+                self.close()
+                raise
+        if not self._context:
+            state = self.vault.load() if saved else None
+            try:
                 self._context = self._browser.new_context(storage_state=state, locale='zh-CN',
                     viewport={'width': 1280, 'height': 860}, accept_downloads=False)
             except BrowserError:
@@ -407,7 +432,7 @@ class DouyinSession:
         self._chat.page.bring_to_front()
         yield self._context, self._chat
 
-    def login(self) -> str:
+    def login(self, *, persist=True) -> str:
         self.progress('请在打开的抖音官方窗口扫码；若有短信或滑块验证，请本人完成')
         with self.open(saved=False, visible=True) as (context, chat):
             deadline = time.monotonic() + 300
@@ -419,9 +444,12 @@ class DouyinSession:
                 try:
                     chat.check_access()
                     key = account_key(context.cookies())
-                    # Only save after an authenticated messaging surface is reachable.
-                    chat.ensure_chat(timeout=max(0, deadline-time.monotonic()))
-                    self.vault.save(context.storage_state())
+                    if persist:
+                        # Legacy callers persist only after a known chat surface.
+                        # Account onboarding instead verifies the server and SDK in
+                        # the worker, including accounts whose contact list is empty.
+                        chat.ensure_chat(timeout=max(0, deadline-time.monotonic()))
+                        self.vault.save(context.storage_state())
                     return key
                 except (LoginRequired, VerificationRequired, ValueError) as exc:
                     if isinstance(exc, LoginRequired) and not clicked_login:
